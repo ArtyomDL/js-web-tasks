@@ -34,3 +34,10 @@
 
 Скачать репозиторий и открыть `index.html` нужной задачи в браузере.
 Для задачи 5 нужен интернет: она обращается к сервису httpbin.org.
+
+
+## Демо
+
+- [Задача 3. Генератор вариантов](https://artyomdl.github.io/js-web-tasks/task3/)
+- [Задача 4. Счётчик времени](https://artyomdl.github.io/js-web-tasks/task4/)
+- [Задача 5. Форма ведомости](https://artyomdl.github.io/js-web-tasks/task5/)
