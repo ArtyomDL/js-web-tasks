@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Задание 4</title>
+    <style>
+        body {
+            font-family: "Times New Roman", Times, serif;
+            font-size: 14pt;
+            margin: 20px;
+        }
+
+        .date-wrapper {
+            position: relative;
+            display: inline-block;
+        }
+
+        #date {
+            width: 110px;
+            padding: 4px;
+            font-size: 12pt;
+            text-align: center;
+            border: 1px solid #000;
+        }
+
+        .calendar {
+            display: none;
+            position: absolute;
+            top: 100%;
+            left: 0;
+            z-index: 10;
+            margin-top: 2px;
+            padding: 6px;
+            background: #fff;
+            border: 1px solid #999;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 11pt;
+        }
+
+        .calendar.open {
+            display: block;
+        }
+
+        .calendar-header {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            margin-bottom: 4px;
+        }
+
+        .calendar-header input {
+            width: 60px;
+        }
+
+        .calendar table {
+            border-collapse: collapse;
+        }
+
+        .calendar th,
+        .calendar td {
+            width: 24px;
+            height: 22px;
+            padding: 0;
+            text-align: center;
+            border: 2px solid transparent;
+        }
+
+        .calendar th {
+            font-weight: bold;
+            color: #555;
+        }
+
+        .calendar .week {
+            color: #b08060;
+        }
+
+        .calendar .weekend {
+            color: #e07040;
+        }
+
+        .calendar td.day {
+            cursor: pointer;
+        }
+
+        .calendar td.day:hover {
+            background: #eee;
+        }
+
+        .calendar td.selected {
+            border-color: red;
+        }
+
+        #result {
+            margin-top: 15px;
+        }
+
+        .error {
+            color: #c00;
+        }
+    </style>
+</head>
+<body>
+<div>
+    Дата:
+    <div class="date-wrapper" id="wrapper">
+        <input type="text" id="date" placeholder="ДД ММ ГГГГ" autocomplete="off">
+        <div class="calendar" id="calendar">
+            <div class="calendar-header">
+                <select id="month"></select>
+                <input type="number" id="year" min="1970" max="2099">
+            </div>
+            <table>
+                <thead>
+                <tr>
+                    <th></th>
+                    <th>Пн</th>
+                    <th>Вт</th>
+                    <th>Ср</th>
+                    <th>Чт</th>
+                    <th>Пт</th>
+                    <th class="weekend">Сб</th>
+                    <th class="weekend">Вс</th>
+                </tr>
+                </thead>
+                <tbody id="days"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+<p id="result"></p>
+
+<script>
+    const MONTHS = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
+        'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
+    const MIN_YEAR = 1970;
+    const MAX_YEAR = 2099;
+
+    const dateInput = document.getElementById('date');
+    const wrapper = document.getElementById('wrapper');
+    const calendar = document.getElementById('calendar');
+    const monthSelect = document.getElementById('month');
+    const yearInput = document.getElementById('year');
+    const daysBody = document.getElementById('days');
+    const result = document.getElementById('result');
+
+    let viewMonth;
+    let viewYear;
+
+    MONTHS.forEach((name, index) => {
+        const option = document.createElement('option');
+        option.value = index;
+        option.textContent = name;
+        monthSelect.appendChild(option);
+    });
+
+    function pad(n) {
+        return String(n).padStart(2, '0');
+    }
+
+    function daysInMonth(year, month) {
+        return new Date(year, month + 1, 0).getDate();
+    }
+
+    function parseDate(text) {
+        const match = /^(\d{2}) (\d{2}) (\d{4})$/.exec(text.trim());
+        if (!match) {
+            return null;
+        }
+        const day = Number(match[1]);
+        const month = Number(match[2]) - 1;
+        const year = Number(match[3]);
+        const date = new Date(year, month, day);
+        if (date.getFullYear() !== year || date.getMonth() !== month || date.getDate() !== day) {
+            return null;
+        }
+        return date;
+    }
+
+    function formatDate(date) {
+        return pad(date.getDate()) + ' ' + pad(date.getMonth() + 1) + ' ' + date.getFullYear();
+    }
+
+    function isoWeek(date) {
+        const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+        const dayNum = (d.getDay() + 6) % 7;
+        d.setDate(d.getDate() - dayNum + 3);
+        const firstThursday = new Date(d.getFullYear(), 0, 4);
+        const firstDayNum = (firstThursday.getDay() + 6) % 7;
+        firstThursday.setDate(firstThursday.getDate() - firstDayNum + 3);
+        return 1 + Math.round((d - firstThursday) / (7 * 24 * 3600 * 1000));
+    }
+
+    function renderCalendar() {
+        monthSelect.value = viewMonth;
+        yearInput.value = viewYear;
+        daysBody.innerHTML = '';
+
+        const selected = parseDate(dateInput.value);
+        const firstDay = new Date(viewYear, viewMonth, 1);
+        const offset = (firstDay.getDay() + 6) % 7;
+        const total = daysInMonth(viewYear, viewMonth);
+
+        let day = 1 - offset;
+        while (day <= total) {
+            const row = document.createElement('tr');
+
+            const weekCell = document.createElement('td');
+            weekCell.className = 'week';
+            weekCell.textContent = isoWeek(new Date(viewYear, viewMonth, day));
+            row.appendChild(weekCell);
+
+            for (let i = 0; i < 7; i++, day++) {
+                const cell = document.createElement('td');
+                if (i >= 5) {
+                    cell.classList.add('weekend');
+                }
+                if (day >= 1 && day <= total) {
+                    cell.textContent = day;
+                    cell.classList.add('day');
+                    cell.dataset.day = day;
+                    if (selected && selected.getFullYear() === viewYear &&
+                        selected.getMonth() === viewMonth && selected.getDate() === day) {
+                        cell.classList.add('selected');
+                    }
+                }
+                row.appendChild(cell);
+            }
+            daysBody.appendChild(row);
+        }
+    }
+
+    function openCalendar() {
+        const date = parseDate(dateInput.value) || new Date();
+        viewMonth = date.getMonth();
+        viewYear = Math.min(MAX_YEAR, Math.max(MIN_YEAR, date.getFullYear()));
+        renderCalendar();
+        calendar.classList.add('open');
+    }
+
+    function closeCalendar() {
+        calendar.classList.remove('open');
+    }
+
+    dateInput.addEventListener('click', function () {
+        if (!calendar.classList.contains('open')) {
+            openCalendar();
+        }
+    });
+
+    document.addEventListener('mousedown', function (event) {
+        if (!wrapper.contains(event.target)) {
+            closeCalendar();
+        }
+    });
+
+    monthSelect.addEventListener('change', function () {
+        viewMonth = Number(monthSelect.value);
+        renderCalendar();
+    });
+
+    yearInput.addEventListener('input', function () {
+        const year = Number(yearInput.value);
+        if (Number.isInteger(year) && year >= MIN_YEAR && year <= MAX_YEAR) {
+            viewYear = year;
+            renderCalendar();
+        }
+    });
+
+    daysBody.addEventListener('click', function (event) {
+        const cell = event.target.closest('td.day');
+        if (!cell) {
+            return;
+        }
+        dateInput.value = formatDate(new Date(viewYear, viewMonth, Number(cell.dataset.day)));
+        closeCalendar();
+        updateText();
+    });
+
+    function plural(n, one, few, many) {
+        const mod10 = n % 10;
+        const mod100 = n % 100;
+        if (mod10 === 1 && mod100 !== 11) {
+            return one;
+        }
+        if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) {
+            return few;
+        }
+        return many;
+    }
+
+    function difference(from, to) {
+        let years = to.getFullYear() - from.getFullYear();
+        let months = to.getMonth() - from.getMonth();
+        let days = to.getDate() - from.getDate();
+        let hours = to.getHours() - from.getHours();
+        let minutes = to.getMinutes() - from.getMinutes();
+
+        if (to.getSeconds() < from.getSeconds()) {
+            minutes--;
+        }
+        if (minutes < 0) {
+            minutes += 60;
+            hours--;
+        }
+        if (hours < 0) {
+            hours += 24;
+            days--;
+        }
+        if (days < 0) {
+            days += daysInMonth(to.getFullYear(), to.getMonth() - 1);
+            months--;
+        }
+        if (months < 0) {
+            months += 12;
+            years--;
+        }
+        return {years, months, days, hours, minutes};
+    }
+
+    function updateText() {
+        const date = parseDate(dateInput.value);
+        result.innerHTML = '';
+
+        if (!date) {
+            result.className = 'error';
+            result.textContent = 'Ошибка данных: укажите корректную дату в формате ДД ММ ГГГГ.';
+            return;
+        }
+        result.className = '';
+
+        const now = new Date();
+        const past = date <= now;
+        const diff = past ? difference(date, now) : difference(now, date);
+
+        const dateParts = [];
+        if (diff.years) {
+            dateParts.push(diff.years + ' ' + plural(diff.years, 'год', 'года', 'лет'));
+        }
+        if (diff.months) {
+            dateParts.push(diff.months + ' ' + plural(diff.months, 'месяц', 'месяца', 'месяцев'));
+        }
+        if (diff.days) {
+            dateParts.push(diff.days + ' ' + plural(diff.days, 'день', 'дня', 'дней'));
+        }
+
+        const timeParts = [];
+        if (diff.hours) {
+            timeParts.push(diff.hours + ' ' + plural(diff.hours, 'час', 'часа', 'часов'));
+        }
+        if (diff.minutes) {
+            timeParts.push(diff.minutes + ' ' + plural(diff.minutes, 'минута', 'минуты', 'минут'));
+        }
+
+        result.appendChild(document.createTextNode(past ? 'От выбранного дня ' : 'До выбранного дня '));
+        const verb = document.createElement('b');
+        verb.textContent = past ? 'прошло' : 'осталось';
+        result.appendChild(verb);
+        result.appendChild(document.createTextNode(' '));
+
+        if (!dateParts.length && !timeParts.length) {
+            result.appendChild(document.createTextNode('менее минуты.'));
+            return;
+        }
+
+        dateParts.forEach((part, index) => {
+            if (index > 0) {
+                result.appendChild(document.createTextNode(', '));
+            }
+            const italic = document.createElement('i');
+            italic.textContent = part;
+            result.appendChild(italic);
+        });
+
+        if (timeParts.length) {
+            const time = timeParts.join(' и ');
+            result.appendChild(document.createTextNode(dateParts.length ? ', а также ' + time : time));
+        }
+        result.appendChild(document.createTextNode('.'));
+    }
+
+    dateInput.addEventListener('change', updateText);
+
+    updateText();
+    setInterval(updateText, 30000);
+</script>
+</body>
+</html>

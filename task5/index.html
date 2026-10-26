@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Задание 5</title>
+    <style>
+        body {
+            font-family: Arial, Helvetica, sans-serif;
+            font-size: 11pt;
+            margin: 20px;
+        }
+
+        .header p {
+            margin: 0 0 10px;
+        }
+
+        #number {
+            width: 110px;
+        }
+
+        #student {
+            width: 300px;
+        }
+
+        table {
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+
+        th,
+        td {
+            border: 1px solid #000;
+            padding: 4px 6px;
+            text-align: center;
+        }
+
+        th {
+            background: #f0f0f0;
+        }
+
+        #rows {
+            counter-reset: row;
+        }
+
+        #rows tr {
+            counter-increment: row;
+        }
+
+        #rows td.num::before {
+            content: counter(row);
+        }
+
+        select {
+            width: 260px;
+        }
+
+        input[type="number"] {
+            width: 75px;
+        }
+
+        .grade {
+            width: 40px;
+            text-align: center;
+        }
+
+        td.operations button {
+            width: 28px;
+        }
+
+        tfoot td {
+            font-weight: bold;
+        }
+
+        #average {
+            display: inline-block;
+            min-width: 40px;
+        }
+
+        #status {
+            margin-top: 15px;
+            min-height: 1.4em;
+        }
+
+        #status.loading::before {
+            content: "";
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            margin-right: 8px;
+            vertical-align: middle;
+            border: 2px solid #999;
+            border-top-color: transparent;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        #status.success {
+            color: #080;
+        }
+
+        #status.error {
+            color: #c00;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+<body>
+<form id="form" novalidate>
+    <div class="header">
+        <p>
+            Ведомость №
+            <input type="text" id="number" name="number" required
+                   pattern="[А-ЯЁA-Z]{2}-\d+-\d{3}" title="Формат: ФИ-ХХ-001, например ЛА-01-001">
+            от
+            <input type="date" id="date" name="date" required>
+        </p>
+        <p>
+            Обучающийся:
+            <input type="text" id="student" name="student" minlength="3" pattern=".*\S.*\S.*\S.*" title="Не менее трёх символов" required>
+        </p>
+    </div>
+
+    <table>
+        <thead>
+        <tr>
+            <th>№ пп</th>
+            <th>Экзамен</th>
+            <th>Балл за<br>экзамен</th>
+            <th>Балл за семестр</th>
+            <th>Оценка</th>
+            <th>Операция</th>
+        </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+        <tfoot>
+        <tr>
+            <td><button type="button" id="add" title="Добавить строку">+</button></td>
+            <td colspan="3" style="text-align: right;">Итого:</td>
+            <td><output id="average"></output></td>
+            <td><button type="submit" id="finish">завершить</button></td>
+        </tr>
+        </tfoot>
+    </table>
+</form>
+
+<div id="status"></div>
+
+<template id="rowTemplate">
+    <tr>
+        <td class="num"></td>
+        <td>
+            <select class="exam" required>
+                <option value="">— выберите экзамен —</option>
+            </select>
+        </td>
+        <td><input type="number" class="exam-score" min="0" max="40" step="0.01" required></td>
+        <td><input type="number" class="semester-score" min="0" max="60" step="0.01" readonly></td>
+        <td><input type="number" class="grade" readonly tabindex="-1"></td>
+        <td class="operations">
+            <button type="button" class="save" title="Сохранить балл за семестр" disabled>S</button>
+            <button type="button" class="remove" title="Удалить строку">–</button>
+            <button type="button" class="edit" title="Изменить балл за семестр">i</button>
+        </td>
+    </tr>
+</template>
+
+<script>
+    const AUTHOR_LAST_NAME = 'Ложкин';
+    const AUTHOR_FIRST_NAME = 'Артём';
+    const AUTHOR_GROUP = '01';
+
+    const COOKIE_NAME = 'statementNumber';
+    const DATA_URL = 'https://httpbin.org/delay/5';
+    const SUBMIT_URLS = [
+        'https://httpbin.org/status/400',
+        'https://httpbin.org/status/500',
+        'https://httpbin.org/status/200'
+    ];
+
+    const EXAMS = [
+        {name: 'Языки программирования', scale: '5-балльная', semesterScore: 45},
+        {name: 'Базы данных', scale: '100-балльная', semesterScore: 52.5},
+        {name: 'Математический анализ', scale: '20-балльная', semesterScore: 38},
+        {name: 'Английский язык', scale: '5-балльная', semesterScore: 60},
+        {name: 'Физика', scale: '100-балльная', semesterScore: 30}
+    ];
+
+    const form = document.getElementById('form');
+    const numberInput = document.getElementById('number');
+    const dateInput = document.getElementById('date');
+    const studentInput = document.getElementById('student');
+    const rowsBody = document.getElementById('rows');
+    const rowTemplate = document.getElementById('rowTemplate');
+    const averageOutput = document.getElementById('average');
+    const status = document.getElementById('status');
+
+    let exams = null;
+    let examsPromise = null;
+    let rejectedStudent = null;
+    let sending = false;
+
+    function setStatus(text, type) {
+        status.textContent = text;
+        status.className = type || '';
+    }
+
+    function getCookie(name) {
+        const match = document.cookie.split('; ').find(c => c.startsWith(name + '='));
+        return match ? decodeURIComponent(match.split('=')[1]) : null;
+    }
+
+    function setCookie(name, value) {
+        document.cookie = name + '=' + encodeURIComponent(value) + '; max-age=' + 365 * 24 * 3600 + '; path=/';
+    }
+
+    function toIsoDate(date) {
+        const pad = n => String(n).padStart(2, '0');
+        return date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate());
+    }
+
+    function currentNumber() {
+        const stored = parseInt(getCookie(COOKIE_NAME), 10);
+        return stored > 0 ? stored : 1;
+    }
+
+    function updateStatementNumber() {
+        numberInput.value = AUTHOR_LAST_NAME[0].toUpperCase() + AUTHOR_FIRST_NAME[0].toUpperCase() +
+            '-' + AUTHOR_GROUP + '-' + String(currentNumber()).padStart(3, '0');
+    }
+
+    function setupDate() {
+        const today = new Date();
+        const monthAgo = new Date(today);
+        monthAgo.setMonth(monthAgo.getMonth() - 1);
+        dateInput.value = toIsoDate(today);
+        dateInput.max = toIsoDate(today);
+        dateInput.min = toIsoDate(monthAgo);
+    }
+
+    function loadExams() {
+        if (exams) {
+            return Promise.resolve(exams);
+        }
+        if (!examsPromise) {
+            setStatus('Загрузка списка экзаменов…', 'loading');
+            examsPromise = fetch(DATA_URL, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(EXAMS)
+            })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('HTTP ' + response.status);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    exams = JSON.parse(data.data);
+                    setStatus('');
+                    return exams;
+                })
+                .catch(error => {
+                    examsPromise = null;
+                    setStatus('Не удалось загрузить список экзаменов (' + error.message +
+                        '). Нажмите «+», чтобы повторить попытку.', 'error');
+                    throw error;
+                });
+        }
+        return examsPromise;
+    }
+
+    function fillExamSelect(select) {
+        const selected = select.value;
+        select.length = 1;
+        exams.forEach((exam, index) => {
+            const option = document.createElement('option');
+            option.value = index;
+            option.textContent = exam.name + ' (' + exam.scale + ')';
+            select.appendChild(option);
+        });
+        select.value = selected;
+    }
+
+    function rows() {
+        return Array.from(rowsBody.rows);
+    }
+
+    function addRow() {
+        const row = rowTemplate.content.firstElementChild.cloneNode(true);
+        const select = row.querySelector('.exam');
+        rowsBody.appendChild(row);
+
+        if (exams) {
+            fillExamSelect(select);
+        } else {
+            select.options[0].textContent = 'Загрузка…';
+            select.disabled = true;
+            loadExams()
+                .then(() => {
+                    rows().forEach(r => {
+                        const s = r.querySelector('.exam');
+                        if (s.length === 1) {
+                            s.options[0].textContent = '— выберите экзамен —';
+                            fillExamSelect(s);
+                        }
+                    });
+                    applyDefaultState();
+                })
+                .catch(() => {
+                    select.options[0].textContent = 'Список не загружен';
+                });
+        }
+        applyDefaultState();
+    }
+
+    function updateSemesterScore(row) {
+        const select = row.querySelector('.exam');
+        const semester = row.querySelector('.semester-score');
+        semester.value = select.value === '' ? '' : exams[select.value].semesterScore;
+    }
+
+    function calculateGrade(sum) {
+        if (sum < 50) {
+            return 0;
+        }
+        if (sum < 70) {
+            return 3;
+        }
+        if (sum < 85) {
+            return 4;
+        }
+        return 5;
+    }
+
+    function updateGrade(row) {
+        const select = row.querySelector('.exam');
+        const examScore = row.querySelector('.exam-score');
+        const semester = row.querySelector('.semester-score');
+        const grade = row.querySelector('.grade');
+
+        if (select.value === '' || examScore.value === '' || !examScore.validity.valid || semester.value === '') {
+            grade.value = '';
+        } else {
+            grade.value = calculateGrade(Number(examScore.value) + Number(semester.value));
+        }
+        updateAverage();
+    }
+
+    function updateAverage() {
+        const grades = rows()
+            .map(row => row.querySelector('.grade').value)
+            .filter(value => value !== '')
+            .map(Number);
+        averageOutput.value = grades.length
+            ? (grades.reduce((a, b) => a + b, 0) / grades.length).toFixed(2)
+            : '';
+    }
+
+    function applyDefaultState() {
+        Array.from(form.elements).forEach(element => {
+            element.disabled = sending;
+        });
+        const single = rows().length === 1;
+        rows().forEach(row => {
+            row.querySelector('.save').disabled = true;
+            row.querySelector('.semester-score').readOnly = true;
+            row.querySelector('.remove').disabled = sending || single;
+            if (!exams) {
+                row.querySelector('.exam').disabled = true;
+            }
+        });
+    }
+
+    function startEdit(row) {
+        if (row.querySelector('.exam').value === '') {
+            setStatus('Сначала выберите экзамен в этой строке.', 'error');
+            return;
+        }
+        setStatus('');
+        Array.from(form.elements).forEach(element => {
+            element.disabled = true;
+        });
+        const semester = row.querySelector('.semester-score');
+        semester.disabled = false;
+        semester.readOnly = false;
+        row.querySelector('.save').disabled = false;
+        semester.focus();
+    }
+
+    function saveSemester(row) {
+        const semester = row.querySelector('.semester-score');
+        if (semester.value === '' || !semester.checkValidity()) {
+            semester.reportValidity();
+            return;
+        }
+        const examIndex = row.querySelector('.exam').value;
+        exams[examIndex].semesterScore = Number(semester.value);
+
+        rows().forEach(r => {
+            if (r.querySelector('.exam').value === examIndex) {
+                updateSemesterScore(r);
+                updateGrade(r);
+            }
+        });
+        applyDefaultState();
+    }
+
+    function removeRow(row) {
+        if (rows().length === 1) {
+            return;
+        }
+        row.remove();
+        updateAverage();
+        applyDefaultState();
+    }
+
+    document.getElementById('add').addEventListener('click', addRow);
+
+    rowsBody.addEventListener('change', function (event) {
+        const row = event.target.closest('tr');
+        if (event.target.classList.contains('exam')) {
+            updateSemesterScore(row);
+        }
+        updateGrade(row);
+    });
+
+    rowsBody.addEventListener('input', function (event) {
+        if (event.target.classList.contains('exam-score')) {
+            updateGrade(event.target.closest('tr'));
+        }
+    });
+
+    rowsBody.addEventListener('click', function (event) {
+        const button = event.target.closest('button');
+        if (!button) {
+            return;
+        }
+        const row = button.closest('tr');
+        if (button.classList.contains('edit')) {
+            startEdit(row);
+        } else if (button.classList.contains('save')) {
+            saveSemester(row);
+        } else if (button.classList.contains('remove')) {
+            removeRow(row);
+        }
+    });
+
+    studentInput.addEventListener('input', function () {
+        studentInput.setCustomValidity('');
+    });
+
+
+    function validate() {
+        if (rejectedStudent !== null && studentInput.value.trim() === rejectedStudent) {
+            studentInput.setCustomValidity('Измените значение получателя: на это значение сервис вернул ошибку.');
+        } else {
+            studentInput.setCustomValidity('');
+        }
+        return form.reportValidity();
+    }
+
+    function collectData() {
+        return {
+            number: numberInput.value,
+            date: dateInput.value,
+            student: studentInput.value.trim(),
+            exams: rows().map(row => {
+                const exam = exams[row.querySelector('.exam').value];
+                return {
+                    name: exam.name,
+                    scale: exam.scale,
+                    examScore: Number(row.querySelector('.exam-score').value),
+                    semesterScore: Number(row.querySelector('.semester-score').value),
+                    grade: Number(row.querySelector('.grade').value)
+                };
+            }),
+            average: Number(averageOutput.value)
+        };
+    }
+
+    form.addEventListener('submit', function (event) {
+        event.preventDefault();
+        if (sending || !exams) {
+            return;
+        }
+        if (!validate()) {
+            return;
+        }
+        if (!confirm('Отправить ведомость ' + numberInput.value + '?')) {
+            return;
+        }
+
+        const data = collectData();
+        const url = SUBMIT_URLS[Math.floor(Math.random() * SUBMIT_URLS.length)];
+
+        sending = true;
+        applyDefaultState();
+        setStatus('Отправка данных…', 'loading');
+
+        fetch(url, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(data)
+        })
+            .then(response => {
+                if (response.ok) {
+                    setCookie(COOKIE_NAME, currentNumber() + 1);
+                    updateStatementNumber();
+                    rejectedStudent = null;
+                    setStatus('Данные успешно отправлены (код ' + response.status + ').', 'success');
+                } else if (response.status >= 400 && response.status < 500) {
+                    rejectedStudent = data.student;
+                    setStatus('Ошибка запроса (код ' + response.status +
+                        '): измените значение получателя («Обучающийся») и отправьте снова.', 'error');
+                } else {
+                    setStatus('Ошибка сервера (код ' + response.status +
+                        '): невозможно выполнить операцию. Повторите попытку позднее.', 'error');
+                }
+            })
+            .catch(() => {
+                setStatus('Не удалось связаться с сервером: невозможно выполнить операцию. ' +
+                    'Повторите попытку позднее.', 'error');
+            })
+            .finally(() => {
+                sending = false;
+                applyDefaultState();
+            });
+    });
+
+    updateStatementNumber();
+    setupDate();
+    addRow();
+</script>
+</body>
+</html>

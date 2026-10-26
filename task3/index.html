@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Задание 3</title>
+    <style>
+        body {
+            font-family: Arial, Helvetica, sans-serif;
+            margin: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 10px;
+        }
+
+        textarea {
+            display: block;
+            width: 100%;
+            max-width: 600px;
+            height: 200px;
+            margin-top: 4px;
+        }
+
+        input[type="number"] {
+            width: 80px;
+        }
+
+        #result {
+            margin-top: 20px;
+        }
+
+        .variant {
+            border: 1px solid #999;
+            padding: 10px 15px;
+            margin-bottom: 10px;
+            max-width: 600px;
+        }
+
+        .variant h3 {
+            margin: 0 0 5px;
+        }
+
+        .message {
+            color: #b00;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+<form id="form">
+    <label>
+        Вопросы (каждая непустая строка — отдельный вопрос):
+        <textarea id="questions"></textarea>
+    </label>
+    <label>
+        Количество вариантов:
+        <input type="number" id="variantCount" min="1" value="3" required>
+    </label>
+    <label>
+        Количество вопросов в варианте:
+        <input type="number" id="questionCount" min="1" value="2" required>
+    </label>
+    <button type="submit">Сформировать</button>
+</form>
+
+<div id="result"></div>
+
+<script>
+    const RESTARTS = 200;
+    const TRIES_PER_VARIANT = 500;
+
+    function randomInt(max) {
+        return Math.floor(Math.random() * max);
+    }
+
+    function randomSample(n, k) {
+        const indexes = [];
+        for (let i = 0; i < n; i++) {
+            indexes.push(i);
+        }
+        for (let i = 0; i < k; i++) {
+            const j = i + randomInt(n - i);
+            [indexes[i], indexes[j]] = [indexes[j], indexes[i]];
+        }
+        return indexes.slice(0, k);
+    }
+
+    function intersection(a, b) {
+        const set = new Set(a);
+        return b.filter(x => set.has(x)).length;
+    }
+
+    function fits(variant, variants, maxCommon) {
+        return variants.every(v => intersection(v, variant) <= maxCommon);
+    }
+
+    function buildVariants(n, k, needed) {
+        const maxCommon = Math.floor(k / 2);
+        let best = [];
+
+        for (let restart = 0; restart < RESTARTS; restart++) {
+            const variants = [];
+            while (variants.length < needed) {
+                let found = null;
+                for (let t = 0; t < TRIES_PER_VARIANT; t++) {
+                    const candidate = randomSample(n, k);
+                    if (fits(candidate, variants, maxCommon)) {
+                        found = candidate;
+                        break;
+                    }
+                }
+                if (!found) {
+                    break;
+                }
+                variants.push(found);
+            }
+            if (variants.length > best.length) {
+                best = variants;
+            }
+            if (best.length === needed) {
+                break;
+            }
+        }
+        return best;
+    }
+
+    function variantWord(count) {
+        const mod10 = count % 10;
+        const mod100 = count % 100;
+        if (mod10 === 1 && mod100 !== 11) {
+            return 'вариант';
+        }
+        if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) {
+            return 'варианта';
+        }
+        return 'вариантов';
+    }
+
+    function showMessage(text) {
+        const result = document.getElementById('result');
+        result.innerHTML = '';
+        const p = document.createElement('p');
+        p.className = 'message';
+        p.textContent = text;
+        result.appendChild(p);
+    }
+
+    function showVariants(variants, questions) {
+        const result = document.getElementById('result');
+        result.innerHTML = '';
+        variants.forEach((variant, index) => {
+            const block = document.createElement('div');
+            block.className = 'variant';
+
+            const title = document.createElement('h3');
+            title.textContent = 'Вариант № ' + (index + 1);
+            block.appendChild(title);
+
+            const list = document.createElement('ol');
+            variant.forEach(q => {
+                const item = document.createElement('li');
+                item.textContent = questions[q];
+                list.appendChild(item);
+            });
+            block.appendChild(list);
+
+            result.appendChild(block);
+        });
+    }
+
+    document.getElementById('form').addEventListener('submit', function (event) {
+        event.preventDefault();
+
+        const questions = document.getElementById('questions').value
+            .split('\n')
+            .map(line => line.trim())
+            .filter(line => line !== '');
+        const variantCount = parseInt(document.getElementById('variantCount').value, 10);
+        const questionCount = parseInt(document.getElementById('questionCount').value, 10);
+
+        if (!(variantCount > 0) || !(questionCount > 0)) {
+            showMessage('Количество вариантов и количество вопросов в варианте должны быть положительными числами.');
+            return;
+        }
+
+        if (questionCount > questions.length) {
+            showMessage('Вопросов недостаточно: введено ' + questions.length +
+                ', а в варианте требуется ' + questionCount + '. Можно сформировать 0 вариантов.');
+            return;
+        }
+
+        const variants = buildVariants(questions.length, questionCount, variantCount);
+
+        if (variants.length < variantCount) {
+            showMessage('Для ' + questions.length + ' вопросов по ' + questionCount +
+                ' в варианте можно сформировать не более ' + variants.length + ' ' +
+                variantWord(variants.length) + ' без пересечения больше 50% вопросов.');
+            return;
+        }
+
+        showVariants(variants, questions);
+    });
+</script>
+</body>
+</html>
